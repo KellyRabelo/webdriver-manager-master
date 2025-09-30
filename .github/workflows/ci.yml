@@ -41,28 +41,31 @@ jobs:
       - name: Chrome debug
         run: |
           google-chrome --version || true
+          which google-chrome || true
 
+      # Roda testes mas NÃO interrompe o job; passos de diagnóstico rodarão depois
       - name: Build & Test (headless)
+        id: mvn
+        continue-on-error: true
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
           CMD="./mvnw"; [ -x "$CMD" ] || CMD="mvn"
 
-          # Flags úteis:
-          # - headless para Chrome
-          # - http factory válido do Selenium 4
-          # - printSummary e trimStackTrace deixam o log mais informativo
+          # Flags do Surefire para deixar logs completos no console
           $CMD -B \
             -Dheadless=true \
             -Dwebdriver.http.factory=${SELENIUM_HTTP_FACTORY} \
             -Dsurefire.printSummary=true \
             -Dsurefire.trimStackTrace=false \
+            -Dsurefire.useFile=false \
+            -Dsurefire.redirectTestOutputToFile=false \
             test
 
-      # >>> DIAGNÓSTICO INLINE QUANDO DER FALHA <<<
-      - name: Print Surefire reports on failure
-        if: failure()
+      # SEMPRE imprime os relatórios (mesmo se o passo acima falhar ou passar)
+      - name: Print Surefire reports
+        if: always()
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
@@ -70,10 +73,10 @@ jobs:
           find . -type f -path "*/target/surefire-reports/*" -print || true
           echo "===== CONTEÚDO DOS .TXT ====="
           find . -type f -path "*/target/surefire-reports/*.txt" -exec echo "----- {} -----" \; -exec cat {} \; || true
-          echo "===== CONTEÚDO DOS .dump E .dumpstream (se existirem) ====="
+          echo "===== CONTEÚDO DOS .dump/.dumpstream (se existirem) ====="
           find . -type f -path "*/target/surefire-reports/*.dump*" -exec echo "----- {} -----" \; -exec cat {} \; || true
 
-      # Publica relatório JUnit no Summary do Actions
+      # Publica sumário JUnit no painel do Actions
       - name: Publish JUnit Summary
         if: always()
         uses: mikepenz/action-junit-report@v4
@@ -104,3 +107,8 @@ jobs:
             ${{ env.PROJECT_DIR }}/**/target/*.log
             ${{ env.PROJECT_DIR }}/**/logs/**
           if-no-files-found: ignore
+
+      # Reprova o job se os testes falharam
+      - name: Fail job if tests failed
+        if: ${{ steps.mvn.outcome == 'failure' }}
+        run: exit 1
