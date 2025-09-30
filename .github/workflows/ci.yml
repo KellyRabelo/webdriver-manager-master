@@ -17,20 +17,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: [ '17', '21' ]   # ajuste se precisar 11, 23, etc.
+        java: [ '17', '21' ]
 
     env:
+      PROJECT_DIR: ./webdriver-manager
       MAVEN_OPTS: "-Xmx1024m"
-      # Força um HttpClient válido do Selenium 4.x (evita 'Unknown HttpClient factory jdk')
       SELENIUM_HTTP_FACTORY: "jdk-http-client"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # 👉 Se o projeto NÃO estiver na raiz, descomente e ajuste o path:
-      # - name: Set working dir
-      #   run: echo "WORKDIR=subpasta/do/projeto" >> $GITHUB_ENV
 
       - name: Setup Java ${{ matrix.java }}
         uses: actions/setup-java@v4
@@ -48,30 +44,28 @@ jobs:
           which google-chrome || true
 
       - name: Build & Test (headless)
+        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
-          # Se existir wrapper, usa; senão, usa maven global
           CMD="./mvnw"
           if [ ! -x "./mvnw" ]; then
             CMD="mvn"
           fi
 
-          # Passa flags úteis para headless e o HttpClient correto do Selenium
-          # Ajuste o diretório se o projeto estiver em subpasta: (ex.: cd "$WORKDIR")
           $CMD -B \
             -Dheadless=true \
             -Dwebdriver.http.factory=${SELENIUM_HTTP_FACTORY} \
             test
 
-      - name: Upload Surefire Reports
+      - name: Upload Surefire/Failsafe Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports-java-${{ matrix.java }}
           path: |
-            **/target/surefire-reports/**
-            **/target/failsafe-reports/**
+            ${{ env.PROJECT_DIR }}/**/target/surefire-reports/**
+            ${{ env.PROJECT_DIR }}/**/target/failsafe-reports/**
           if-no-files-found: ignore
 
       - name: Upload Screenshots/Logs (se existirem)
@@ -80,7 +74,7 @@ jobs:
         with:
           name: test-artifacts-java-${{ matrix.java }}
           path: |
-            **/target/screenshots/**
-            **/target/*.log
-            **/logs/**
+            ${{ env.PROJECT_DIR }}/**/target/screenshots/**
+            ${{ env.PROJECT_DIR }}/**/target/*.log
+            ${{ env.PROJECT_DIR }}/**/logs/**
           if-no-files-found: ignore
