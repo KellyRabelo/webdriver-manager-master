@@ -38,26 +38,52 @@ jobs:
       - name: Setup Google Chrome
         uses: browser-actions/setup-chrome@v1
 
-      - name: Show Chrome version (debug)
+      - name: Chrome debug
         run: |
           google-chrome --version || true
-          which google-chrome || true
 
       - name: Build & Test (headless)
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
-          CMD="./mvnw"
-          if [ ! -x "./mvnw" ]; then
-            CMD="mvn"
-          fi
+          CMD="./mvnw"; [ -x "$CMD" ] || CMD="mvn"
 
+          # Flags úteis:
+          # - headless para Chrome
+          # - http factory válido do Selenium 4
+          # - printSummary e trimStackTrace deixam o log mais informativo
           $CMD -B \
             -Dheadless=true \
             -Dwebdriver.http.factory=${SELENIUM_HTTP_FACTORY} \
+            -Dsurefire.printSummary=true \
+            -Dsurefire.trimStackTrace=false \
             test
 
+      # >>> DIAGNÓSTICO INLINE QUANDO DER FALHA <<<
+      - name: Print Surefire reports on failure
+        if: failure()
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          echo "===== LISTANDO RELATÓRIOS SUREFIRE ====="
+          find . -type f -path "*/target/surefire-reports/*" -print || true
+          echo "===== CONTEÚDO DOS .TXT ====="
+          find . -type f -path "*/target/surefire-reports/*.txt" -exec echo "----- {} -----" \; -exec cat {} \; || true
+          echo "===== CONTEÚDO DOS .dump E .dumpstream (se existirem) ====="
+          find . -type f -path "*/target/surefire-reports/*.dump*" -exec echo "----- {} -----" \; -exec cat {} \; || true
+
+      # Publica relatório JUnit no Summary do Actions
+      - name: Publish JUnit Summary
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: "${{ env.PROJECT_DIR }}/**/target/surefire-reports/TEST-*.xml"
+          check_name: "JUnit Report (Java ${{ matrix.java }})"
+          detailed_summary: true
+          include_passed: true
+
+      # Artefatos para baixar
       - name: Upload Surefire/Failsafe Reports
         if: always()
         uses: actions/upload-artifact@v4
